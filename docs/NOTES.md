@@ -266,3 +266,56 @@ does the systolic array actually buy you?" with real numbers.
    It produces the 16 results one at a time over 64 cycles, so it has to store
    them somewhere until the end. In the systolic array the accumulators *are*
    the storage, so no extra output registers are needed.
+
+---
+
+## Step 6 — Synthesis (`syn/synth.tcl`, `syn/clock.xdc`)
+
+**What it does.** A non-project Vivado script that synthesizes both designs for
+the PYNQ-Z2's Zynq part (`xc7z020clg400-1`) with a 100 MHz clock, writes the
+full utilization and timing reports to `syn/out/<design>/`, and puts a
+side-by-side table (LUTs, FFs, DSPs, WNS, Fmax) in `syn/out/summary.txt`.
+
+**Why it's built this way.**
+- *Out-of-context mode.* Our ports add up to 256 + 256 + 512 + 4 ≈ 1028 bits,
+  but the chip only has 125 user I/O pins. OOC mode tells Vivado "this block
+  will sit inside a bigger design", so it doesn't try to put every port on a
+  pin, and the numbers reflect only the logic we wrote.
+- *Non-project flow.* Everything is in one readable script, so the results are
+  reproducible with one command, and there's no Vivado project folder to commit.
+- *Fmax from WNS.* WNS (worst negative slack) is how much spare time the
+  slowest path has at 10 ns. If WNS = +3 ns, the worst path takes 7 ns, so the
+  design could run at 1000 / 7 ≈ 143 MHz. Formula: `Fmax = 1000 / (10 − WNS)`.
+
+**What to expect when you read the reports.**
+- *DSPs.* A multiply feeding an accumulator is exactly what a DSP48E1 slice is
+  built for, so Vivado will usually put each PE's MAC in one DSP (16 for the
+  array, 1 for the baseline). It may decide an 8×8 multiply is small enough for
+  LUTs instead — the report tells you which.
+- *FFs.* The systolic design holds A and B copies (256), skew registers (96),
+  and per PE a 32-bit accumulator plus two 8-bit pass-through registers. If the
+  accumulator is packed into the DSP's internal register, it won't appear in
+  the FF count.
+- *LUTs in the baseline* are mostly the big multiplexers that pick
+  `A[i][k]` and `B[k][j]` out of 16 values each, and the write-enable logic for
+  the 16 output registers.
+- These are **post-synthesis** estimates: no routing delay yet, so the real
+  post-route Fmax will be lower.
+
+**Interview questions**
+
+1. *What is WNS, and what does a negative value mean?*
+   Worst Negative Slack: the time margin on the slowest register-to-register
+   path. Positive means the design meets the clock with room to spare; negative
+   means at least one path is too slow and the design would fail at that clock.
+
+2. *Why is post-synthesis timing optimistic?*
+   Synthesis only knows the logic delay and a rough guess for wires. Real wire
+   delays are only known after placement and routing, and on an FPGA they are
+   often half or more of the path delay.
+
+3. *What is the critical path in a PE, and how would you speed it up?*
+   `a_in × b_in + acc → acc`: one multiply and one 32-bit add in a single
+   cycle. To go faster you would pipeline it — register the product first, then
+   add next cycle (the DSP48 has built-in registers for exactly this). That adds
+   one cycle of latency but can roughly double Fmax.
