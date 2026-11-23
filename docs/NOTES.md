@@ -7,6 +7,8 @@ Each section ends with a few interview-style questions and answers.
 
 ## Step 1 — Processing Element (`rtl/pe.sv`)
 
+![Processing element](figures/pe.drawio.svg)
+
 **What it does.** A PE is one cell of the grid. Every clock cycle (while `en`
 is high) it multiplies the `a` value coming from the left by the `b` value
 coming from the top, adds the product to its accumulator, and passes `a` to the
@@ -59,6 +61,8 @@ Result: **3019 checks, 0 errors — PASS.**
 
 ## Step 2 — The grid (`rtl/systolic_array.sv`)
 
+![Skew feeder and PE grid](figures/array_skew.drawio.svg)
+
 **What it does.** Builds an N×N grid of PEs with two nested `generate` loops and
 wires each PE's `a_out` to its right neighbour and `b_out` to the neighbour
 below. Row `i` of the left edge feeds `a_left[i]`; column `j` of the top edge
@@ -100,6 +104,11 @@ Full verification happens at the top level (step 4).
 
 ## Step 3 — Skew feeder (`rtl/skew_feeder.sv`)
 
+The effect of the skew: each PE starts `i + j` cycles late, so the work moves
+through the grid as a diagonal wave.
+
+![Which PE works in which cycle](figures/wavefront.drawio.svg)
+
 **What it does.** Delays lane `i` of A by `i` cycles and lane `j` of B by `j`
 cycles using shift registers. Lane 0 is a plain wire. The result is the
 "staircase" (diagonal wavefront) that a systolic array needs.
@@ -139,6 +148,10 @@ lane 3 showed 31–34 at t3–t6 — the expected staircase.
 ---
 
 ## Step 4 — Top level and FSM (`rtl/systolic_mm.sv`)
+
+![Top-level block diagram](figures/top_level.drawio.svg)
+
+![FSMs](figures/fsm.drawio.svg)
 
 **What it does.** Takes A and B as flat buses, copies them into internal
 registers on `start`, and runs a 4-state FSM:
@@ -186,6 +199,8 @@ because the next run's CLEAR starts right after DONE.
   but values are still moving through the grid; feeding zeros means the extra
   cycles add `0 × 0` and don't disturb the answer.
 
+![Testbench structure](figures/testbench.drawio.svg)
+
 **Test (`tb/tb_systolic_mm.sv` + shared `tb/mm_tests.svh`).** A golden-model
 triple loop in the testbench, compared element by element. Tests: a
 walkthrough run (dumped to VCD), all zeros, A×I, I×B, all +127, all −128,
@@ -220,6 +235,10 @@ unsigned multiply, no clear, 16-bit accumulator). **Every one was caught.**
 ---
 
 ## Step 5 — Single-MAC baseline (`rtl/mac_baseline.sv`)
+
+![mac_baseline datapath](figures/baseline.drawio.svg)
+
+![Latency timeline](figures/timeline.drawio.svg)
 
 **What it does.** The same ports and the same answer as `systolic_mm`, but with
 just **one** multiplier. Three counters `i, j, k` walk the textbook triple

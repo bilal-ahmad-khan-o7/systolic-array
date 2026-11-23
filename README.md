@@ -13,6 +13,22 @@ cases, 1000 random matrices, and back-to-back runs).
 
 ## Architecture
 
+![Top-level block diagram](docs/figures/top_level.drawio.svg)
+
+The FSM copies A and B into input registers on `start`. Each compute cycle it
+picks one column of A and one row of B, and the skew feeder delays them into a
+staircase before they enter the grid:
+
+![Skew feeder and 4x4 PE grid](docs/figures/array_skew.drawio.svg)
+
+Each PE multiplies the two values passing through it, adds the product to its
+accumulator, and passes the values on through registers:
+
+![Processing element](docs/figures/pe.drawio.svg)
+
+<details>
+<summary>Text version of the architecture</summary>
+
 ```
                        systolic_mm (top: FSM + A/B input registers)
    a_flat ──┐                                                   ┌── busy, done
@@ -43,6 +59,8 @@ cases, 1000 random matrices, and back-to-back runs).
    c_flat = all 16 accumulators ────────────────────────────────┘
 ```
 
+</details>
+
 ## Cycle-by-cycle example (2×2)
 
 A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]]. Expected C = [[19, 22], [43, 50]].
@@ -66,6 +84,11 @@ The "—" cells are where a PE multiplies zeros: the data hasn't reached it yet,
 or has already passed. Compute takes 3N−2 = 4 cycles for N = 2, and the whole
 run takes 3N = 6.
 
+The same pattern for the full 4×4 array: each PE works for 4 cycles, starting
+`i + j` cycles late, so the work sweeps through the grid as a diagonal wave.
+
+![Which PE works in which cycle](docs/figures/wavefront.drawio.svg)
+
 ## Results
 
 ### Latency (measured in simulation, start → done)
@@ -81,7 +104,20 @@ overhead: one to clear the accumulators, and one to present the result with
 `done`. The same testbench, run with N = 2, 3 and 8, measured 6, 9 and 24
 cycles (always 3N). See [docs/NOTES.md](docs/NOTES.md#step-4--top-level-and-fsm-rtlsystolic_mmsv) for details.
 
+![Latency timeline](docs/figures/timeline.drawio.svg)
+
+The two control FSMs:
+
+![FSMs of systolic_mm and mac_baseline](docs/figures/fsm.drawio.svg)
+
+The baseline uses one multiplier and two 16-to-1 multiplexers to step through
+the triple loop, one multiply-accumulate per cycle:
+
+![mac_baseline datapath](docs/figures/baseline.drawio.svg)
+
 ### Verification
+
+![Testbench structure](docs/figures/testbench.drawio.svg)
 
 | Testbench             | What it checks                                                         | Result |
 |-----------------------|------------------------------------------------------------------------|--------|
@@ -135,7 +171,13 @@ tb/tb_mac_baseline.sv  baseline test (instantiates the DUT)
 tb/mm_tests.svh        shared test program: golden model + all test cases
 tb/systolic_mm.gtkw    GTKWave view of the skewing
 docs/NOTES.md          design notes and interview Q&A for each step
+docs/figures/          architecture diagrams (.drawio.svg)
 ```
+
+The diagrams in `docs/figures/` are SVG images with the draw.io source
+embedded. GitHub shows them as normal images, and you can open the same file in
+[diagrams.net](https://app.diagrams.net) or the VS Code *Draw.io Integration*
+extension to edit them.
 
 ## Interface
 
