@@ -1,6 +1,3 @@
 build/
 *.vcd
 *.vvp
-*.jou
-*.log
-.Xil/

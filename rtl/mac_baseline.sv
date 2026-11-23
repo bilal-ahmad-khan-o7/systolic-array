@@ -14,7 +14,7 @@
 //       C[i][j] = acc
 //
 // That is N*N*N = 64 cycles of work for N = 4. It exists only so we can
-// compare cycle counts and FPGA resources against the systolic array.
+// compare cycle counts against the systolic array.
 //
 // FSM:  IDLE --start--> COMPUTE (N^3 cycles) --> DONE --> IDLE
 //                          ^                       |

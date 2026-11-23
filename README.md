@@ -9,8 +9,7 @@ by *i* and *j* cycles, so each matching pair `A[i][k]` and `B[k][j]` meets at
 the right PE at the right time. The array finishes a multiply in **12 cycles**,
 compared with **65 cycles** for a baseline that has a single MAC unit (5.4×
 faster). Both designs are checked by self-checking testbenches (directed edge
-cases, 1000 random matrices, and back-to-back runs) and synthesized for the
-PYNQ-Z2's Zynq-7020.
+cases, 1000 random matrices, and back-to-back runs).
 
 ## Architecture
 
@@ -82,17 +81,6 @@ overhead: one to clear the accumulators, and one to present the result with
 `done`. The same testbench, run with N = 2, 3 and 8, measured 6, 9 and 24
 cycles (always 3N). See [docs/NOTES.md](docs/NOTES.md#step-4--top-level-and-fsm-rtlsystolic_mmsv) for details.
 
-### FPGA resources (Vivado, xc7z020clg400-1, 100 MHz, post-synthesis, out-of-context)
-
-| Design         | LUTs | FFs | DSPs | WNS @ 100 MHz | Fmax (est.) |
-|----------------|------|-----|------|---------------|-------------|
-| `systolic_mm`  | TBD  | TBD | TBD  | TBD           | TBD         |
-| `mac_baseline` | TBD  | TBD | TBD  | TBD           | TBD         |
-
-*Fill this in from `syn/out/summary.txt` after running the synthesis command
-below. Fmax = 1000 / (10 − WNS) MHz. Post-synthesis timing does not include
-routing delay, so it is optimistic.*
-
 ### Verification
 
 | Testbench             | What it checks                                                         | Result |
@@ -133,17 +121,6 @@ To try another array size (the RTL is parameterized):
 iverilog -g2012 -I tb -Ptb_systolic_mm.N=8 -o build/n8.vvp rtl/pe.sv rtl/skew_feeder.sv rtl/systolic_array.sv rtl/systolic_mm.sv tb/tb_systolic_mm.sv && vvp -n build/n8.vvp
 ```
 
-### Synthesis (Vivado)
-
-From the project folder, in a shell where `vivado` is on the PATH:
-
-```bash
-vivado -mode batch -source syn/synth.tcl
-```
-
-Reports go to `syn/out/systolic_mm/`, `syn/out/mac_baseline/` and
-`syn/out/summary.txt`.
-
 ## Project layout
 
 ```
@@ -157,8 +134,6 @@ tb/tb_systolic_mm.sv   top-level test (instantiates the DUT)
 tb/tb_mac_baseline.sv  baseline test (instantiates the DUT)
 tb/mm_tests.svh        shared test program: golden model + all test cases
 tb/systolic_mm.gtkw    GTKWave view of the skewing
-syn/synth.tcl          Vivado non-project, out-of-context synthesis
-syn/clock.xdc          100 MHz clock constraint
 docs/NOTES.md          design notes and interview Q&A for each step
 ```
 

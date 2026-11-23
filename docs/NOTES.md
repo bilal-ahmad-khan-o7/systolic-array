@@ -27,8 +27,9 @@ right and `b` downward through registers.
 - *`clear` also zeroes the pass-through registers.* The spec only needs the
   accumulator cleared, but also wiping `a_out`/`b_out` means a new run never
   depends on what was left in the pipeline from the last one.
-- *Synchronous reset.* Xilinx FPGAs prefer synchronous resets — they map
-  cleanly onto the flip-flops and DSP blocks.
+- *Synchronous reset.* Reset (and clear) only act on a rising clock edge,
+  just like normal data, so the PE behaves the same way in every cycle and
+  there are no timing surprises from a reset arriving mid-cycle.
 
 **Test (`tb/tb_pe.sv`).** The testbench keeps its own model of what `acc`,
 `a_out` and `b_out` should be, and compares after every clock. It covers reset,
@@ -69,7 +70,7 @@ feeds `b_top[j]`. Every PE's accumulator is exposed on the flat `c_flat` bus.
 - *Wire arrays with one extra column/row* (`a_wire[i][0..N]`,
   `b_wire[0..N][j]`) make the indexing uniform: PE(i,j) always reads
   `[i][j]` and writes `[i][j+1]` / `[i+1][j]`. The extra entries are what
-  "falls off" the edge and are simply unused (synthesis removes them).
+  "falls off" the edge and are simply left unconnected.
 - *No skewing here.* Keeping the delay logic in a separate module keeps this
   one pure wiring, which is easier to read and test.
 
@@ -267,55 +268,3 @@ does the systolic array actually buy you?" with real numbers.
    them somewhere until the end. In the systolic array the accumulators *are*
    the storage, so no extra output registers are needed.
 
----
-
-## Step 6 — Synthesis (`syn/synth.tcl`, `syn/clock.xdc`)
-
-**What it does.** A non-project Vivado script that synthesizes both designs for
-the PYNQ-Z2's Zynq part (`xc7z020clg400-1`) with a 100 MHz clock, writes the
-full utilization and timing reports to `syn/out/<design>/`, and puts a
-side-by-side table (LUTs, FFs, DSPs, WNS, Fmax) in `syn/out/summary.txt`.
-
-**Why it's built this way.**
-- *Out-of-context mode.* Our ports add up to 128 + 128 + 512 + 5 = 773 bits,
-  but the chip only has 125 user I/O pins. OOC mode tells Vivado "this block
-  will sit inside a bigger design", so it doesn't try to put every port on a
-  pin, and the numbers reflect only the logic we wrote.
-- *Non-project flow.* Everything is in one readable script, so the results are
-  reproducible with one command, and there's no Vivado project folder to commit.
-- *Fmax from WNS.* WNS (worst negative slack) is how much spare time the
-  slowest path has at 10 ns. If WNS = +3 ns, the worst path takes 7 ns, so the
-  design could run at 1000 / 7 ≈ 143 MHz. Formula: `Fmax = 1000 / (10 − WNS)`.
-
-**What to expect when you read the reports.**
-- *DSPs.* A multiply feeding an accumulator is exactly what a DSP48E1 slice is
-  built for, so Vivado will usually put each PE's MAC in one DSP (16 for the
-  array, 1 for the baseline). It may decide an 8×8 multiply is small enough for
-  LUTs instead — the report tells you which.
-- *FFs.* The systolic design holds A and B copies (2 × 128), skew registers (96),
-  and per PE a 32-bit accumulator plus two 8-bit pass-through registers. If the
-  accumulator is packed into the DSP's internal register, it won't appear in
-  the FF count.
-- *LUTs in the baseline* are mostly the big multiplexers that pick
-  `A[i][k]` and `B[k][j]` out of 16 values each, and the write-enable logic for
-  the 16 output registers.
-- These are **post-synthesis** estimates: no routing delay yet, so the real
-  post-route Fmax will be lower.
-
-**Interview questions**
-
-1. *What is WNS, and what does a negative value mean?*
-   Worst Negative Slack: the time margin on the slowest register-to-register
-   path. Positive means the design meets the clock with room to spare; negative
-   means at least one path is too slow and the design would fail at that clock.
-
-2. *Why is post-synthesis timing optimistic?*
-   Synthesis only knows the logic delay and a rough guess for wires. Real wire
-   delays are only known after placement and routing, and on an FPGA they are
-   often half or more of the path delay.
-
-3. *What is the critical path in a PE, and how would you speed it up?*
-   `a_in × b_in + acc → acc`: one multiply and one 32-bit add in a single
-   cycle. To go faster you would pipeline it — register the product first, then
-   add next cycle (the DSP48 has built-in registers for exactly this). That adds
-   one cycle of latency but can roughly double Fmax.
