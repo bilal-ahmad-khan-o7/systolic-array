@@ -94,3 +94,43 @@ Full verification happens at the top level (step 4).
    Each PE only talks to its immediate neighbours, so wire length doesn't grow
    with N. The control signals (`en`, `clear`) do fan out to every PE, but they
    are slow-changing and easy to pipeline if needed.
+
+---
+
+## Step 3 — Skew feeder (`rtl/skew_feeder.sv`)
+
+**What it does.** Delays lane `i` of A by `i` cycles and lane `j` of B by `j`
+cycles using shift registers. Lane 0 is a plain wire. The result is the
+"staircase" (diagonal wavefront) that a systolic array needs.
+
+**Why it's built this way.**
+- *Why skew at all?* PE(i,j) needs `A[i][k]` and `B[k][j]` at the same moment.
+  `A[i][k]` takes `j` cycles to travel right to column `j`; `B[k][j]` takes `i`
+  cycles to travel down to row `i`. If row `i` starts `i` cycles late and
+  column `j` starts `j` cycles late, both arrive at cycle `k + i + j`. Without
+  the skew, PE(i,j) would multiply mismatched pairs like `A[i][k] × B[k+1][j]`.
+- *Shift registers, not counters.* A delay of `d` cycles is exactly `d`
+  flip-flops in a chain. Total storage: `0+1+2+3 = 6` registers per side for
+  N=4, i.e. `N(N-1)/2`.
+- *Same `en` and `clear` as the array* so the feeder and grid always stay in
+  step, and a new run starts from empty shift registers.
+
+**Check.** A throwaway smoke test fed lane value `10·lane + step` and printed
+the outputs: lane 0 showed 1,2,3,4 at t0–t3, lane 1 showed 11–14 at t1–t4,
+lane 3 showed 31–34 at t3–t6 — the expected staircase.
+
+**Interview questions**
+
+1. *What goes wrong if you remove the skew?*
+   Every PE in a row would see the same A value at the same time, but the B
+   values reach lower rows later, so PE(i,j) would multiply `A[i][k]` with the
+   wrong row of B. The result is silently wrong, not an error.
+
+2. *How many registers does the skew cost, and how does it scale?*
+   `N(N-1)/2` per input matrix, so `N(N-1)` total. That's O(N²), the same order
+   as the PE grid itself, so it's a small overhead.
+
+3. *Could you avoid the skew registers?*
+   Yes — if the memory that supplies A and B can output the data already
+   staggered (e.g. each row's read starts one cycle later), the delays are
+   "free". Here a separate module is clearer and keeps the top simple.
