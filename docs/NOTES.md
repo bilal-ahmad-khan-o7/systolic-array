@@ -53,3 +53,44 @@ Result: **3019 checks, 0 errors — PASS.**
    and every PE would see the same value at the same time. The register is what
    creates the one-cycle-per-PE "wave", and it keeps the critical path short
    (one multiply + one add) no matter how large N is.
+
+---
+
+## Step 2 — The grid (`rtl/systolic_array.sv`)
+
+**What it does.** Builds an N×N grid of PEs with two nested `generate` loops and
+wires each PE's `a_out` to its right neighbour and `b_out` to the neighbour
+below. Row `i` of the left edge feeds `a_left[i]`; column `j` of the top edge
+feeds `b_top[j]`. Every PE's accumulator is exposed on the flat `c_flat` bus.
+
+**Why it's built this way.**
+- *`generate` loops* mean the same code works for any `N` — change one
+  parameter and you get a 2×2 or 8×8 array.
+- *Wire arrays with one extra column/row* (`a_wire[i][0..N]`,
+  `b_wire[0..N][j]`) make the indexing uniform: PE(i,j) always reads
+  `[i][j]` and writes `[i][j+1]` / `[i+1][j]`. The extra entries are what
+  "falls off" the edge and are simply unused (synthesis removes them).
+- *No skewing here.* Keeping the delay logic in a separate module keeps this
+  one pure wiring, which is easier to read and test.
+
+**Check.** A throwaway 2×2 smoke test with hand-skewed inputs
+(A = [[1,2],[3,4]], B = [[5,6],[7,8]]) produced C = [[19,22],[43,50]] — correct.
+Full verification happens at the top level (step 4).
+
+**Interview questions**
+
+1. *Why "output-stationary"? What are the alternatives?*
+   The output C[i][j] stays put in one PE while A and B flow past it. In
+   *weight-stationary* (used by Google's TPU) the B/weight values are preloaded
+   into the PEs and stay put while A flows through and partial sums flow down.
+   In *input-stationary* the A values stay put. Output-stationary is the
+   simplest to understand because each PE just accumulates one dot product.
+
+2. *How many multipliers does an N×N array use, and how many MACs does it do per cycle?*
+   N² multipliers (16 for N=4). When the pipeline is full, all N² do useful
+   work each cycle, versus 1 for a single MAC unit.
+
+3. *Why don't long wires appear as N grows?*
+   Each PE only talks to its immediate neighbours, so wire length doesn't grow
+   with N. The control signals (`en`, `clear`) do fan out to every PE, but they
+   are slow-changing and easy to pipeline if needed.
