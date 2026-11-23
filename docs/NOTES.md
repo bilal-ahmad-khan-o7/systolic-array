@@ -134,3 +134,84 @@ lane 3 showed 31–34 at t3–t6 — the expected staircase.
    Yes — if the memory that supplies A and B can output the data already
    staggered (e.g. each row's read starts one cycle later), the delays are
    "free". Here a separate module is clearer and keeps the top simple.
+
+---
+
+## Step 4 — Top level and FSM (`rtl/systolic_mm.sv`)
+
+**What it does.** Takes A and B as flat buses, copies them into internal
+registers on `start`, and runs a 4-state FSM:
+
+| State   | Cycles | What happens |
+|---------|--------|--------------|
+| IDLE    | —      | Wait for `start`. On `start`, copy A and B into `a_reg`/`b_reg`. |
+| CLEAR   | 1      | `clear = 1`: zero every accumulator and pipeline register. |
+| COMPUTE | 3N−2   | `en = 1`. Steps 0..N−1 feed column k of A and row k of B; later steps feed zeros. |
+| DONE    | 1      | `done = 1`. If `start` is high here, go straight to CLEAR (back-to-back). |
+
+**Measured latency: 12 cycles from `start` to `done`** (start is high in cycle
+0, done is high in cycle 12). The testbench checks this exact number on every
+one of its 1059 runs.
+
+**Why 12 and not 10?** The theoretical 3N−2 = 10 cycles is only the time the
+array itself spends computing:
+- PE(i,j) gets its first pair at compute step `i+j` and its last at `i+j+N−1`.
+- The last PE, PE(3,3), finishes at step `3+3+3 = 9`, so steps 0..9 = **10 cycles**.
+
+The FSM adds **2 cycles** of overhead:
+- **+1 for CLEAR**: the accumulators from the previous run must be zeroed
+  before the new data arrives.
+- **+1 for DONE**: the last accumulate happens on the clock edge that *ends*
+  compute step 9, so the answer is only visible in the next cycle, which is
+  where `done` is raised.
+
+So `1 + 10 + 1 = 12 = 3N`. The same TB, re-run with N = 2, 3 and 8, measured
+6, 9 and 24 cycles — exactly 3N every time.
+
+*Could you save those 2 cycles?* Yes: you could clear the accumulators in the
+same cycle that `start` is accepted, and raise `done` combinationally during
+the last compute step. That makes the control logic harder to read and puts
+the `done` signal on a longer path, so this design keeps the simple version.
+Note that with back-to-back runs the throughput is one result every 12 cycles,
+because the next run's CLEAR starts right after DONE.
+
+**Why it's built this way.**
+- *Copy A and B on start.* The caller can change `a_flat`/`b_flat` the very
+  next cycle. The testbench checks this by putting random garbage on the
+  inputs while the DUT is busy.
+- *Ignore `start` while busy.* The testbench also toggles `start` randomly
+  during every run; a correct design ignores it.
+- *Feed zeros after the data.* After step N−1 there is nothing left to send,
+  but values are still moving through the grid; feeding zeros means the extra
+  cycles add `0 × 0` and don't disturb the answer.
+
+**Test (`tb/tb_systolic_mm.sv` + shared `tb/mm_tests.svh`).** A golden-model
+triple loop in the testbench, compared element by element. Tests: a
+walkthrough run (dumped to VCD), all zeros, A×I, I×B, all +127, all −128,
+−128×+127, a ±127/−128 checkerboard, small mixed signs, 1000 random matrices
+(seed 2024) with random 0–3 cycle gaps, and 50 back-to-back runs with zero gap.
+Only one reset at the very start. Result: **1059 runs, 0 errors — PASS.**
+
+To make sure the tests can actually fail, seven deliberate bugs were tried
+(no skew, one compute cycle short, no input copy, no back-to-back restart,
+unsigned multiply, no clear, 16-bit accumulator). **Every one was caught.**
+
+**Interview questions**
+
+1. *Your array computes in 10 cycles but you report 12. Why?*
+   10 cycles (3N−2) is the time from the first data entering PE(0,0) to the
+   last accumulate in PE(3,3). One cycle before that is spent clearing the
+   accumulators and one after is spent presenting the result with `done`. Both
+   could be overlapped with more complex control, but they cost little.
+
+2. *Why is the compute time 3N−2 and not N?*
+   Each PE only needs N cycles of real work, but the skew means PE(i,j) starts
+   `i+j` cycles late. The farthest PE starts `2(N−1)` cycles late and then needs
+   N cycles: `2(N−1) + N = 3N−2`. This "fill and drain" time is why systolic
+   arrays are most efficient when you stream many matrices through them.
+
+3. *How would you make back-to-back runs faster?*
+   Overlap them: start feeding the next A and B while the previous result is
+   still draining, and copy each finished C into an output register so the
+   accumulators can be reused. With full overlap you can start a new tile every
+   N cycles instead of every 3N.
