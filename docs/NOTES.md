@@ -215,3 +215,54 @@ unsigned multiply, no clear, 16-bit accumulator). **Every one was caught.**
    still draining, and copy each finished C into an output register so the
    accumulators can be reused. With full overlap you can start a new tile every
    N cycles instead of every 3N.
+
+---
+
+## Step 5 — Single-MAC baseline (`rtl/mac_baseline.sv`)
+
+**What it does.** The same ports and the same answer as `systolic_mm`, but with
+just **one** multiplier. Three counters `i, j, k` walk the textbook triple
+loop, doing one multiply-accumulate per cycle. When `k` reaches N−1 the
+finished dot product is written into `C[i][j]`.
+
+**Measured latency: 65 cycles** (N³ = 64 compute cycles + 1 DONE cycle). It
+has no CLEAR state because each dot product simply starts from 0 when `k = 0`.
+Compared to the systolic array's 12 cycles, that's **5.4× faster** for the
+array, using 16 multipliers instead of 1. (For N = 8: 513 vs 24 cycles, 21×.)
+
+**A real bug found by the tests.** The first version had:
+
+```systemverilog
+assign sum = ((k == 0) ? '0 : acc) + product;
+```
+
+The baseline TB failed on 1056 of 1059 runs, with results like `65529` where
+`-7` was expected. `'0` is an *unsigned* literal, and in Verilog one unsigned
+operand makes the whole expression unsigned — so `product` was zero-extended
+instead of sign-extended. The fix was to compute `acc_base = (k == 0) ? '0 : acc`
+into its own `signed` signal and then do `sum = acc_base + product` with two
+signed operands. The test was not changed.
+
+**Why it's built this way.** It's deliberately the simplest correct design:
+one multiplier, a few counters, no pipelining. It answers the question "what
+does the systolic array actually buy you?" with real numbers.
+
+**Interview questions**
+
+1. *Systolic array: 12 cycles with 16 multipliers. Baseline: 65 cycles with 1. Is that a good trade?*
+   Speedup is 65/12 ≈ 5.4×, not 16×, because of the fill/drain time (3N−2
+   instead of N) and the 2 cycles of FSM overhead. If you stream many
+   matrices through and overlap the runs, the array approaches one result every
+   N cycles, i.e. 64/4 = 16× — the full benefit of 16 multipliers.
+
+2. *What's the signedness rule that caused the bug?*
+   An expression is only signed if *every* operand is signed. Unsized literals
+   like `'0`, `'1` and plain part-selects like `bus[7:0]` are unsigned. Mixing
+   one in silently turns the whole expression unsigned. Safe habits: put
+   signed values in `logic signed` signals before doing maths, or use
+   `$signed(...)`.
+
+3. *Why does the baseline still need N² × 32 bits of output registers?*
+   It produces the 16 results one at a time over 64 cycles, so it has to store
+   them somewhere until the end. In the systolic array the accumulators *are*
+   the storage, so no extra output registers are needed.

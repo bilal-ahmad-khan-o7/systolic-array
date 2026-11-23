@@ -12,9 +12,9 @@ BUILD    := build
 RTL_PE  := rtl/pe.sv
 RTL_MM  := rtl/pe.sv rtl/skew_feeder.sv rtl/systolic_array.sv rtl/systolic_mm.sv
 
-.PHONY: test test_pe test_mm wave clean
+.PHONY: test test_pe test_mm test_mac wave clean
 
-test: test_pe test_mm
+test: test_pe test_mm test_mac
 	@echo "All testbenches passed."
 
 # Each test: compile, run, save the log, then fail the make if PASS is missing.
@@ -31,6 +31,13 @@ test_mm: $(BUILD)/tb_systolic_mm.vvp
 
 $(BUILD)/tb_systolic_mm.vvp: $(RTL_MM) tb/tb_systolic_mm.sv tb/mm_tests.svh | $(BUILD)
 	$(IVERILOG) -I tb -o $@ $(RTL_MM) tb/tb_systolic_mm.sv
+
+test_mac: $(BUILD)/tb_mac_baseline.vvp
+	$(VVP) $< | tee $(BUILD)/tb_mac_baseline.log
+	@grep -q '^PASS' $(BUILD)/tb_mac_baseline.log
+
+$(BUILD)/tb_mac_baseline.vvp: rtl/mac_baseline.sv tb/tb_mac_baseline.sv tb/mm_tests.svh | $(BUILD)
+	$(IVERILOG) -I tb -o $@ rtl/mac_baseline.sv tb/tb_mac_baseline.sv
 
 # The top-level test saves its first (walkthrough) run to a VCD file.
 # tb/systolic_mm.gtkw opens it with the skew signals already on screen.
