@@ -8,7 +8,7 @@
 #   1. reads the RTL and the 100 MHz clock constraint
 #   2. runs synth_design in out-of-context mode. OOC means "this block lives
 #      inside a bigger design", so Vivado does not try to put every port on a
-#      package pin (our buses are 256 + 256 + 512 bits wide - far more than
+#      package pin (our ports add up to 128 + 128 + 512 + 5 = 773 bits - far more than
 #      the 125 user I/O pins on the xc7z020clg400).
 #   3. writes utilization and timing reports to syn/out/<top>/
 #   4. pulls out LUTs, FFs, DSPs and WNS, and estimates Fmax

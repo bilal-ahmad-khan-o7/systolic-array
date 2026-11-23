@@ -277,7 +277,7 @@ full utilization and timing reports to `syn/out/<design>/`, and puts a
 side-by-side table (LUTs, FFs, DSPs, WNS, Fmax) in `syn/out/summary.txt`.
 
 **Why it's built this way.**
-- *Out-of-context mode.* Our ports add up to 256 + 256 + 512 + 4 ≈ 1028 bits,
+- *Out-of-context mode.* Our ports add up to 128 + 128 + 512 + 5 = 773 bits,
   but the chip only has 125 user I/O pins. OOC mode tells Vivado "this block
   will sit inside a bigger design", so it doesn't try to put every port on a
   pin, and the numbers reflect only the logic we wrote.
@@ -292,7 +292,7 @@ side-by-side table (LUTs, FFs, DSPs, WNS, Fmax) in `syn/out/summary.txt`.
   built for, so Vivado will usually put each PE's MAC in one DSP (16 for the
   array, 1 for the baseline). It may decide an 8×8 multiply is small enough for
   LUTs instead — the report tells you which.
-- *FFs.* The systolic design holds A and B copies (256), skew registers (96),
+- *FFs.* The systolic design holds A and B copies (2 × 128), skew registers (96),
   and per PE a 32-bit accumulator plus two 8-bit pass-through registers. If the
   accumulator is packed into the DSP's internal register, it won't appear in
   the FF count.
